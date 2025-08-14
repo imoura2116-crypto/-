@@ -13,14 +13,20 @@
     .answer { font-size: 20px; color: #555; padding: 10px; border: 1px dashed #ccc; border-radius: 6px; min-height: 40px; text-align: center; }
     .hidden { filter: blur(8px); }
     .status-bar { text-align: center; font-size: 14px; color: #333; margin-bottom: 5px; }
+    .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
 <main>
   <div class="card">
-    <label>問題集を選択:</label>
-    <select id="csvSelect"></select>
-    <button id="loadCsv">読み込む</button>
+    <div class="controls">
+      <label>カテゴリ:</label>
+      <select id="categorySelect"></select>
+      <label>問題集:</label>
+      <select id="csvSelect"></select>
+      <button id="loadCsv">読み込む</button>
+      <label><input type="checkbox" id="shuffle"> ランダム順</label>
+    </div>
     <span id="status"></span>
   </div>
 
@@ -35,29 +41,59 @@
 let deck = [];
 let idx = 0;
 let touchStartX = 0, touchStartY = 0;
+let fileMap = {};
 
 async function loadList() {
-  const candidates = ["骨の生理,構造,化学.csv", "骨盤骨折.csv"];
-  const csvFiles = [];
-  for (const file of candidates) {
-    try {
-      const res = await fetch('csv/' + file, { method: 'HEAD' });
-      if (res.ok) csvFiles.push(file);
-    } catch(e) {}
+  try {
+    const res = await fetch('csv/list.json');
+    const files = await res.json();
+    fileMap = {};
+    files.forEach(path => {
+      const [category, filename] = path.split('/');
+      if (!fileMap[category]) fileMap[category] = [];
+      fileMap[category].push(filename);
+    });
+    populateCategories();
+  } catch (e) {
+    document.getElementById('status').textContent = 'list.jsonの取得に失敗';
   }
-  const sel = document.getElementById('csvSelect');
-  sel.innerHTML = '';
-  csvFiles.forEach(file => {
+}
+
+function populateCategories() {
+  const catSel = document.getElementById('categorySelect');
+  catSel.innerHTML = '';
+  Object.keys(fileMap).forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    catSel.appendChild(opt);
+  });
+  populateFiles();
+}
+
+function populateFiles() {
+  const catSel = document.getElementById('categorySelect');
+  const fileSel = document.getElementById('csvSelect');
+  fileSel.innerHTML = '';
+  const files = fileMap[catSel.value] || [];
+  files.forEach(file => {
     const opt = document.createElement('option');
     opt.value = file;
     opt.textContent = file;
-    sel.appendChild(opt);
+    fileSel.appendChild(opt);
   });
 }
 
 function parseCSV(text) {
   const rows = text.split(/\r?\n/).map(r => r.split(','));
   return rows.filter(r => r.length >= 2 && r[0] && r[1]).map(r => ({q: r[0], a: r[1]}));
+}
+
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
 }
 
 function showCard() {
@@ -71,11 +107,15 @@ function showCard() {
 }
 
 async function loadCsv() {
+  const category = document.getElementById('categorySelect').value;
   const file = document.getElementById('csvSelect').value;
   try {
-    const res = await fetch('csv/' + file);
+    const res = await fetch(`csv/${category}/${file}`);
     const text = await res.text();
     deck = parseCSV(text);
+    if (document.getElementById('shuffle').checked) {
+      shuffleArray(deck);
+    }
     idx = 0;
     showCard();
     document.getElementById('status').textContent = `${deck.length}問読み込み完了`;
@@ -118,6 +158,7 @@ touchArea.addEventListener('touchend', e => {
 }, {passive:true});
 
 document.getElementById('loadCsv').addEventListener('click', loadCsv);
+document.getElementById('categorySelect').addEventListener('change', populateFiles);
 
 loadList();
 </script>
