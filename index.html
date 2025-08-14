@@ -5,84 +5,128 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CSV一問一答</title>
 <style>
-  body { font-family: sans-serif; text-align: center; padding: 10px; }
-  #question { font-size: 1.2em; margin: 20px 0; }
-  #answer { font-size: 1.2em; margin: 20px 0; display: none; }
-  button { padding: 10px; margin: 5px; font-size: 1em; }
-  #progress { margin: 10px 0; font-size: 0.9em; color: #555; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100vh;
+  }
+  header {
+    padding: 10px;
+    font-weight: bold;
+    font-size: 1.2em;
+    color: #333;
+  }
+  #question {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    max-width: 90%;
+    margin: 20px 0;
+    font-size: 1.1em;
+    text-align: center;
+  }
+  #answer {
+    background: #4cafef;
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-top: 10px;
+    display: none;
+    text-align: center;
+  }
+  #progress {
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: #555;
+  }
+  select, button {
+    padding: 8px 12px;
+    margin: 5px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 0.9em;
+  }
+  button {
+    cursor: pointer;
+    background-color: #4cafef;
+    color: white;
+    border: none;
+  }
+  button:hover {
+    background-color: #3a9cd6;
+  }
 </style>
 </head>
 <body>
-<select id="fileSelect"></select>
-<div id="progress"></div>
-<div id="question"></div>
+<header>CSV一問一答</header>
+<select id="csvSelect"></select>
+<div id="question">問題がここに表示されます</div>
 <div id="answer"></div>
-<button id="showAnswer">答えを表示</button>
+<div id="progress"></div>
+<div>
+  <button id="prevBtn">前へ</button>
+  <button id="showBtn">答えを見る</button>
+  <button id="nextBtn">次へ</button>
+</div>
 <script>
-let data = [], current = 0, order = [];
+let qaList = [];
+let currentIndex = 0;
 
-async function loadList(){
+async function loadList() {
   const res = await fetch('csv/list.json?_=' + Date.now());
-  const list = await res.json();
-  const sel = document.getElementById('fileSelect');
-  list.forEach(f => {
+  const files = await res.json();
+  const select = document.getElementById('csvSelect');
+  files.forEach(file => {
     const opt = document.createElement('option');
-    opt.value = f; opt.textContent = f; sel.appendChild(opt);
+    opt.value = file;
+    opt.textContent = file;
+    select.appendChild(opt);
   });
-  sel.onchange = () => loadCSV(sel.value);
-  if(list.length) loadCSV(list[0]);
+  select.addEventListener('change', () => loadCSV(select.value));
+  if (files.length > 0) loadCSV(files[0]);
 }
 
-async function loadCSV(file){
-  const res = await fetch(file);
+async function loadCSV(path) {
+  const res = await fetch(path + '?_=' + Date.now());
   const text = await res.text();
-  data = text.split(/\r?\n/).filter(l => l.trim()).map(l => l.split(','));
-  order = [...Array(data.length).keys()];
-  shuffle(order);
-  current = 0;
+  qaList = text.trim().split(/\r?\n/).map(line => {
+    const [q, a] = line.split(',');
+    return {q, a};
+  });
+  currentIndex = 0;
   showQuestion();
 }
 
-function showQuestion(){
-  if(data.length===0) return;
-  document.getElementById('question').textContent = data[order[current]][0];
+function showQuestion() {
+  document.getElementById('question').textContent = qaList[currentIndex].q;
   document.getElementById('answer').style.display = 'none';
-  document.getElementById('answer').textContent = data[order[current]][1] || '';
-  document.getElementById('progress').textContent = `${current+1} / ${data.length}問`;
+  document.getElementById('progress').textContent = `${currentIndex + 1} / ${qaList.length}問`;
 }
 
-document.getElementById('showAnswer').onclick = () => {
-  const ans = document.getElementById('answer');
-  ans.style.display = ans.style.display==='none' ? 'block' : 'none';
-};
-
-document.addEventListener('keydown', e => {
-  if(e.key==='ArrowRight') next();
-  if(e.key==='ArrowLeft') prev();
+document.getElementById('showBtn').addEventListener('click', () => {
+  const ansDiv = document.getElementById('answer');
+  ansDiv.textContent = qaList[currentIndex].a;
+  ansDiv.style.display = 'block';
 });
 
-document.addEventListener('touchstart', handleTouchStart, false);
-document.addEventListener('touchend', handleTouchEnd, false);
-let xDown = null;
-function handleTouchStart(e){ xDown = e.touches[0].clientX; }
-function handleTouchEnd(e){
-  if(!xDown) return;
-  let xUp = e.changedTouches[0].clientX;
-  let diff = xDown - xUp;
-  if(diff>50) next();
-  else if(diff<-50) prev();
-  xDown = null;
-}
-
-function next(){ if(current < data.length-1){ current++; showQuestion(); } }
-function prev(){ if(current > 0){ current--; showQuestion(); } }
-
-function shuffle(arr){
-  for(let i=arr.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]]=[arr[j],arr[i]];
+document.getElementById('prevBtn').addEventListener('click', () => {
+  if (currentIndex > 0) {
+    currentIndex--;
+    showQuestion();
   }
-}
+});
+
+document.getElementById('nextBtn').addEventListener('click', () => {
+  if (currentIndex < qaList.length - 1) {
+    currentIndex++;
+    showQuestion();
+  }
+});
 
 loadList();
 </script>
