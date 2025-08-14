@@ -1,133 +1,88 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>一問一答（サブフォルダ対応）</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSV一問一答</title>
+<style>
+  body { font-family: sans-serif; text-align: center; padding: 10px; }
+  #question { font-size: 1.2em; margin: 20px 0; }
+  #answer { font-size: 1.2em; margin: 20px 0; display: none; }
+  button { padding: 10px; margin: 5px; font-size: 1em; }
+  #progress { margin: 10px 0; font-size: 0.9em; color: #555; }
+</style>
 </head>
 <body>
-<main>
-  <div>
-    <label>カテゴリ:</label>
-    <select id="categorySelect"></select>
-    <label>問題集:</label>
-    <select id="csvSelect"></select>
-    <button id="loadCsv">読み込む</button>
-    <label><input type="checkbox" id="shuffle"> ランダム順</label>
-    <span id="status"></span>
-  </div>
-  <div id="touchArea" style="margin-top:20px;">
-    <div id="progress">0/0</div>
-    <div id="question" style="font-size:22px;margin:10px 0;">CSVを選択してください</div>
-    <div id="answer" style="font-size:20px;color:#555;border:1px dashed #ccc;padding:10px;border-radius:6px;" class="hidden">ここに答え</div>
-  </div>
-</main>
+<select id="fileSelect"></select>
+<div id="progress"></div>
+<div id="question"></div>
+<div id="answer"></div>
+<button id="showAnswer">答えを表示</button>
 <script>
-let deck = [];
-let idx = 0;
-let fileMap = {};
-let touchStartX = 0, touchStartY = 0;
+let data = [], current = 0, order = [];
 
-async function loadList() {
-  try {
-    const res = await fetch('csv/list.json?v=' + Date.now()); // キャッシュ回避
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const files = await res.json();
-    fileMap = {};
-    files.forEach(path => {
-      const [category, filename] = path.split('/');
-      if (!fileMap[category]) fileMap[category] = [];
-      fileMap[category].push(filename);
-    });
-    populateCategories();
-  } catch (e) {
-    document.getElementById('status').textContent = 'list.jsonの取得に失敗: ' + e.message;
-  }
-}
-
-function populateCategories() {
-  const catSel = document.getElementById('categorySelect');
-  catSel.innerHTML = '';
-  Object.keys(fileMap).forEach(cat => {
+async function loadList(){
+  const res = await fetch('csv/list.json?_=' + Date.now());
+  const list = await res.json();
+  const sel = document.getElementById('fileSelect');
+  list.forEach(f => {
     const opt = document.createElement('option');
-    opt.value = cat;
-    opt.textContent = cat;
-    catSel.appendChild(opt);
+    opt.value = f; opt.textContent = f; sel.appendChild(opt);
   });
-  populateFiles();
+  sel.onchange = () => loadCSV(sel.value);
+  if(list.length) loadCSV(list[0]);
 }
 
-function populateFiles() {
-  const catSel = document.getElementById('categorySelect');
-  const fileSel = document.getElementById('csvSelect');
-  fileSel.innerHTML = '';
-  (fileMap[catSel.value] || []).forEach(file => {
-    const opt = document.createElement('option');
-    opt.value = file;
-    opt.textContent = file;
-    fileSel.appendChild(opt);
-  });
+async function loadCSV(file){
+  const res = await fetch(file);
+  const text = await res.text();
+  data = text.split(/\r?\n/).filter(l => l.trim()).map(l => l.split(','));
+  order = [...Array(data.length).keys()];
+  shuffle(order);
+  current = 0;
+  showQuestion();
 }
 
-function parseCSV(text) {
-  return text.split(/\r?\n/).map(r => r.split(',')).filter(r => r.length >= 2 && r[0] && r[1]).map(r => ({q: r[0], a: r[1]}));
+function showQuestion(){
+  if(data.length===0) return;
+  document.getElementById('question').textContent = data[order[current]][0];
+  document.getElementById('answer').style.display = 'none';
+  document.getElementById('answer').textContent = data[order[current]][1] || '';
+  document.getElementById('progress').textContent = `${current+1} / ${data.length}問`;
 }
 
-function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+document.getElementById('showAnswer').onclick = () => {
+  const ans = document.getElementById('answer');
+  ans.style.display = ans.style.display==='none' ? 'block' : 'none';
+};
+
+document.addEventListener('keydown', e => {
+  if(e.key==='ArrowRight') next();
+  if(e.key==='ArrowLeft') prev();
+});
+
+document.addEventListener('touchstart', handleTouchStart, false);
+document.addEventListener('touchend', handleTouchEnd, false);
+let xDown = null;
+function handleTouchStart(e){ xDown = e.touches[0].clientX; }
+function handleTouchEnd(e){
+  if(!xDown) return;
+  let xUp = e.changedTouches[0].clientX;
+  let diff = xDown - xUp;
+  if(diff>50) next();
+  else if(diff<-50) prev();
+  xDown = null;
+}
+
+function next(){ if(current < data.length-1){ current++; showQuestion(); } }
+function prev(){ if(current > 0){ current--; showQuestion(); } }
+
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
   }
 }
-
-function showCard() {
-  if (!deck.length) return;
-  document.getElementById('question').textContent = deck[idx].q;
-  const ansEl = document.getElementById('answer');
-  ansEl.textContent = deck[idx].a;
-  ansEl.classList.add('hidden');
-  document.getElementById('progress').textContent = `${idx+1} / ${deck.length}`;
-}
-
-async function loadCsv() {
-  const category = document.getElementById('categorySelect').value;
-  const file = document.getElementById('csvSelect').value;
-  try {
-    const res = await fetch(`csv/${category}/${file}?v=${Date.now()}`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    deck = parseCSV(text);
-    if (document.getElementById('shuffle').checked) shuffleArray(deck);
-    idx = 0;
-    showCard();
-    document.getElementById('status').textContent = `${deck.length}問読み込み完了`;
-  } catch (e) {
-    document.getElementById('status').textContent = 'CSV読み込み失敗: ' + e.message;
-  }
-}
-
-function nextCard() { if (deck.length) { idx = (idx + 1) % deck.length; showCard(); } }
-function prevCard() { if (deck.length) { idx = (idx - 1 + deck.length) % deck.length; showCard(); } }
-
-// タップで答え表示
-document.getElementById('touchArea').addEventListener('click', () => document.getElementById('answer').classList.remove('hidden'));
-// フリックで前/後
-const SWIPE_THRESHOLD = 50;
-document.getElementById('touchArea').addEventListener('touchstart', e => {
-  const t = e.changedTouches[0];
-  touchStartX = t.clientX; touchStartY = t.clientY;
-}, {passive:true});
-document.getElementById('touchArea').addEventListener('touchend', e => {
-  const t = e.changedTouches[0];
-  const dx = t.clientX - touchStartX;
-  const dy = t.clientY - touchStartY;
-  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) {
-    if (dx > 0) prevCard(); else nextCard();
-  }
-}, {passive:true});
-
-document.getElementById('loadCsv').addEventListener('click', loadCsv);
-document.getElementById('categorySelect').addEventListener('change', populateFiles);
 
 loadList();
 </script>
