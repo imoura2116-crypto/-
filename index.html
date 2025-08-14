@@ -1,180 +1,117 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>暗記帳</title>
-<style>
-  body {
-    font-family: 'Segoe UI', sans-serif;
-    margin: 0;
-    background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    height: 100vh;
-    overflow: hidden;
-  }
-  .tabs {
-    display: flex;
-    width: 100%;
-    background: #ddd;
-  }
-  .tab {
-    flex: 1;
-    text-align: center;
-    padding: 10px;
-    cursor: pointer;
-    background: #ccc;
-  }
-  .tab.active {
-    background: #fff;
-    font-weight: bold;
-  }
-  #question, #answer {
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    max-width: 90%;
-    margin: 20px 0;
-    font-size: 1.2em;
-    text-align: center;
-    word-break: break-word;
-  }
-  #answer {
-    background: #4cafef;
-    color: white;
-    display: none;
-  }
-  #progress {
-    margin-top: 5px;
-    font-size: 0.9em;
-    color: #555;
-  }
-  select {
-    margin-top: 10px;
-    padding: 8px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSV一問一答（GitHub API自動検出）</title>
+  <style>
+    :root{--fg:#1f2937;--muted:#6b7280;--acc:#3b82f6}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,'Noto Sans JP',sans-serif;background:linear-gradient(135deg,#f5f7fa,#c3cfe2);color:var(--fg);display:flex;flex-direction:column;align-items:center}
+    .wrap{width:100%;max-width:860px;padding:10px}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    select,button,label{font-size:14px}
+    select,button{padding:8px 10px;border-radius:10px;border:1px solid #cbd5e1;background:#fff}
+    button.primary{background:linear-gradient(180deg,#60a5fa,#3b82f6);color:#fff;border-color:#60a5fa}
+    .status{font-size:12px;color:var(--muted)}
+    .card{background:#fff;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.08);padding:16px;margin-top:10px}
+    .q{font-size:22px;text-align:center;word-break:break-word}
+    .a{font-size:20px;color:#fff;background:#2563eb;border-radius:12px;padding:14px;text-align:center;margin-top:10px;display:none}
+    .prog{font-size:13px;color:var(--muted);text-align:center;margin-top:6px}
+    .hint{font-size:12px;color:var(--muted);text-align:center;margin-top:6px}
+    @media (min-width:840px){ .q{font-size:24px}.a{font-size:22px} }
+  </style>
 </head>
 <body>
-<div class="tabs" id="folderTabs"></div>
-<select id="csvSelect"></select>
-<div id="question">問題がここに表示されます</div>
-<div id="answer"></div>
-<div id="progress"></div>
-<script>
-let qaList = [];
-let currentIndex = 0;
-let fileStructure = {};
+  <div class="wrap">
+    <div class="controls">
+      <label>問題集:</label>
+      <select id="csvSelect"></select>
+      <label><input type="checkbox" id="shuffle" checked> ランダム順</label>
+      <button id="loadBtn" class="primary">読み込む</button>
+      <span id="status" class="status"></span>
+    </div>
 
-async function loadList() {
-  try {
-    const res = await fetch('csv/list.json?_=' + Date.now());
-    fileStructure = await res.json();
-    const folderTabs = document.getElementById('folderTabs');
-    folderTabs.innerHTML = '';
-    Object.keys(fileStructure).forEach((folder, idx) => {
-      const tab = document.createElement('div');
-      tab.className = 'tab' + (idx === 0 ? ' active' : '');
-      tab.textContent = folder;
-      tab.addEventListener('click', () => selectFolder(folder, tab));
-      folderTabs.appendChild(tab);
-    });
-    if (Object.keys(fileStructure).length > 0) {
-      selectFolder(Object.keys(fileStructure)[0], folderTabs.children[0]);
+    <div class="card" id="touchArea">
+      <div id="progress" class="prog">0 / 0 問</div>
+      <div id="q" class="q">CSVを選択して「読み込む」を押してください</div>
+      <div id="a" class="a">ここに答え</div>
+      <div class="hint">タップで答え表示／左右スワイプで前後へ</div>
+    </div>
+  </div>
+
+  <script>
+    let deck = [], idx = 0, xStart = null, yStart = null;
+    const $ = id => document.getElementById(id);
+
+    async function loadList(){
+      try{
+        const {owner, repo} = detectRepoFromLocation();
+        const repoInfo = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}`);
+        const branch = repoInfo.default_branch || 'main';
+        const items = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/csv?ref=${branch}`);
+        const csvFiles = items.filter(x=>x.type==='file' && /\.csv$/i.test(x.name));
+        const sel = $('csvSelect'); sel.innerHTML='';
+        for(const f of csvFiles){
+          const opt = document.createElement('option');
+          opt.value = f.download_url; // 直接ダウンロードURL
+          opt.textContent = f.name;   // 表示名
+          sel.appendChild(opt);
+        }
+        if(csvFiles.length){ sel.value = csvFiles[0].download_url; }
+        $('status').textContent = csvFiles.length + ' ファイル（GitHub API）';
+      }catch(e){ $('status').textContent = 'CSV一覧取得失敗: ' + (e.message||e); }
     }
-  } catch (e) {
-    console.error('リスト取得失敗:', e);
-  }
-}
 
-function selectFolder(folder, tabEl) {
-  document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-  tabEl.classList.add('active');
-  const select = document.getElementById('csvSelect');
-  select.innerHTML = '';
-  fileStructure[folder].forEach(file => {
-    const opt = document.createElement('option');
-    opt.value = file;
-    opt.textContent = file.split('/').pop();
-    select.appendChild(opt);
-  });
-  select.onchange = () => loadCSV(select.value);
-  if (fileStructure[folder].length > 0) loadCSV(fileStructure[folder][0]);
-}
+    function detectRepoFromLocation(){
+      const host = location.hostname;
+      const path = location.pathname.replace(/^\//,'');
+      let owner = host.split('.')[0];
+      let repo = path.split('/')[0] || '';
+      const params = new URLSearchParams(location.search);
+      owner = params.get('owner') || owner;
+      repo = params.get('repo') || repo;
+      return {owner, repo};
+    }
 
-async function loadCSV(path) {
-  try {
-    const res = await fetch(path + '?_=' + Date.now());
-    const text = await res.text();
-    qaList = text.trim().split(/\r?\n/).map(line => {
-      const [q, a] = line.split(',');
-      return {q: q.trim(), a: a.trim()};
-    });
-    currentIndex = 0;
-    shuffleQuestions();
-    showQuestion();
-  } catch (e) {
-    console.error('CSV読み込み失敗:', e);
-  }
-}
+    async function fetchJSON(url){
+      const res = await fetch(url, {headers:{'Accept':'application/vnd.github+json'}});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+        $('status').textContent = files.length+ ' ファイル';
+      }catch(e){$('status').textContent = 'CSV一覧取得失敗: '+e.message;}
+    }
 
-function shuffleQuestions() {
-  for (let i = qaList.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [qaList[i], qaList[j]] = [qaList[j], qaList[i]];
-  }
-}
+    function detectDelimiter(text){const sample=text.split(/\r?\n/).slice(0,5).join('\n');const cand=[',','\t',';'];let best=',',score=-1;for(const d of cand){const s=sample.split(/\r?\n/).map(l=>l.split(d).length).reduce((a,b)=>a+b,0);if(s>score){score=s;best=d}}return best;}
+    function parseCSV(text){const delim=detectDelimiter(text);const rows=text.split(/\r?\n/).map(l=>l.split(delim));return rows.map(r=>({q:(r[0]||'').trim(),a:(r[1]||'').trim()})).filter(x=>x.q&&x.a);}
+    function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}}
 
-function showQuestion() {
-  document.getElementById('question').textContent = qaList[currentIndex].q;
-  document.getElementById('answer').style.display = 'none';
-  document.getElementById('progress').textContent = `${currentIndex + 1} / ${qaList.length}問`;
-}
+    async function loadCSV(){
+      const url = $('csvSelect').value; // download_url を保持
+      $('status').textContent = '読み込み中…';
+      try{
+        const res = await fetch(url + (url.includes('?')?'&':'?') + 'v=' + Date.now());
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const text = await res.text();
+        deck = parseCSV(text);
+        if(!deck.length) throw new Error('有効な行がありません（1列目=問題,2列目=回答）');
+        if($('shuffle').checked) shuffle(deck);
+        idx = 0; update();
+        $('status').textContent = `${deck.length} 問 読み込み完了`;
+      }catch(e){ $('status').textContent = 'CSV読込失敗: ' + e.message; }
+    }
 
-document.body.addEventListener('click', () => {
-  const ansDiv = document.getElementById('answer');
-  if (ansDiv.style.display === 'none') {
-    ansDiv.textContent = qaList[currentIndex].a;
-    ansDiv.style.display = 'block';
-  } else {
-    nextQuestion();
-  }
-});
+    function update(){$('q').textContent=deck[idx]?.q||'—';$('a').style.display='none';$('a').textContent=deck[idx]?.a||'';$('progress').textContent=`${idx+1} / ${deck.length} 問`;}
+    function next(){if(!deck.length)return;idx=(idx+1)%deck.length;update();}
+    function prev(){if(!deck.length)return;idx=(idx-1+deck.length)%deck.length;update();}
 
-document.body.addEventListener('touchstart', handleTouchStart, false);
-document.body.addEventListener('touchend', handleTouchEnd, false);
-let xDown = null;
-function handleTouchStart(evt) {
-  xDown = evt.touches[0].clientX;
-}
-function handleTouchEnd(evt) {
-  if (!xDown) return;
-  let xUp = evt.changedTouches[0].clientX;
-  let xDiff = xDown - xUp;
-  if (Math.abs(xDiff) > 50) {
-    if (xDiff > 0) nextQuestion();
-    else prevQuestion();
-  }
-  xDown = null;
-}
+    $('touchArea').addEventListener('click',()=>{if(!deck.length)return;const ans=$('a');if(ans.style.display==='none')ans.style.display='block';else next();});
+    $('touchArea').addEventListener('touchstart',e=>{const t=e.changedTouches[0];xStart=t.clientX;yStart=t.clientY;},{passive:true});
+    $('touchArea').addEventListener('touchend',e=>{if(xStart==null)return;const t=e.changedTouches[0];const dx=t.clientX-xStart;const dy=t.clientY-yStart;xStart=yStart=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){if(dx>0)prev();else next();}},{passive:true});
 
-function nextQuestion() {
-  if (currentIndex < qaList.length - 1) currentIndex++;
-  else currentIndex = 0;
-  showQuestion();
-}
-function prevQuestion() {
-  if (currentIndex > 0) currentIndex--;
-  else currentIndex = qaList.length - 1;
-  showQuestion();
-}
-
-loadList();
-</script>
+    $('loadBtn').addEventListener('click',loadCSV);
+    loadList();
+  </script>
 </body>
 </html>
