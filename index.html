@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSV一問一答</title>
+<title>暗記帳</title>
 <style>
   body {
     font-family: 'Segoe UI', sans-serif;
@@ -13,82 +13,96 @@
     flex-direction: column;
     align-items: center;
     height: 100vh;
+    overflow: hidden;
   }
-  header {
+  .tabs {
+    display: flex;
+    width: 100%;
+    background: #ddd;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
     padding: 10px;
-    font-weight: bold;
-    font-size: 1.2em;
-    color: #333;
+    cursor: pointer;
+    background: #ccc;
   }
-  #question {
+  .tab.active {
+    background: #fff;
+    font-weight: bold;
+  }
+  #question, #answer {
     background: white;
     padding: 20px;
     border-radius: 12px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     max-width: 90%;
     margin: 20px 0;
-    font-size: 1.1em;
+    font-size: 1.2em;
     text-align: center;
   }
   #answer {
     background: #4cafef;
     color: white;
-    padding: 15px;
-    border-radius: 10px;
-    margin-top: 10px;
     display: none;
-    text-align: center;
   }
   #progress {
-    margin-top: 10px;
+    margin-top: 5px;
     font-size: 0.9em;
     color: #555;
   }
-  select, button {
-    padding: 8px 12px;
-    margin: 5px;
+  select {
+    margin-top: 10px;
+    padding: 8px;
     border-radius: 6px;
     border: 1px solid #ccc;
-    font-size: 0.9em;
-  }
-  button {
-    cursor: pointer;
-    background-color: #4cafef;
-    color: white;
-    border: none;
-  }
-  button:hover {
-    background-color: #3a9cd6;
   }
 </style>
 </head>
 <body>
-<header>CSV一問一答</header>
+<div class="tabs" id="folderTabs"></div>
 <select id="csvSelect"></select>
 <div id="question">問題がここに表示されます</div>
 <div id="answer"></div>
 <div id="progress"></div>
-<div>
-  <button id="prevBtn">前へ</button>
-  <button id="showBtn">答えを見る</button>
-  <button id="nextBtn">次へ</button>
-</div>
 <script>
 let qaList = [];
 let currentIndex = 0;
+let fileStructure = {};
 
 async function loadList() {
-  const res = await fetch('csv/list.json?_=' + Date.now());
-  const files = await res.json();
+  try {
+    const res = await fetch('csv/list.json?_=' + Date.now());
+    fileStructure = await res.json();
+    const folderTabs = document.getElementById('folderTabs');
+    Object.keys(fileStructure).forEach((folder, idx) => {
+      const tab = document.createElement('div');
+      tab.className = 'tab' + (idx === 0 ? ' active' : '');
+      tab.textContent = folder;
+      tab.addEventListener('click', () => selectFolder(folder, tab));
+      folderTabs.appendChild(tab);
+    });
+    if (Object.keys(fileStructure).length > 0) {
+      selectFolder(Object.keys(fileStructure)[0], folderTabs.children[0]);
+    }
+  } catch (e) {
+    console.error('リスト取得失敗:', e);
+  }
+}
+
+function selectFolder(folder, tabEl) {
+  document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+  tabEl.classList.add('active');
   const select = document.getElementById('csvSelect');
-  files.forEach(file => {
+  select.innerHTML = '';
+  fileStructure[folder].forEach(file => {
     const opt = document.createElement('option');
     opt.value = file;
-    opt.textContent = file;
+    opt.textContent = file.split('/').pop();
     select.appendChild(opt);
   });
-  select.addEventListener('change', () => loadCSV(select.value));
-  if (files.length > 0) loadCSV(files[0]);
+  select.onchange = () => loadCSV(select.value);
+  if (fileStructure[folder].length > 0) loadCSV(fileStructure[folder][0]);
 }
 
 async function loadCSV(path) {
@@ -99,7 +113,15 @@ async function loadCSV(path) {
     return {q, a};
   });
   currentIndex = 0;
+  shuffleQuestions();
   showQuestion();
+}
+
+function shuffleQuestions() {
+  for (let i = qaList.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [qaList[i], qaList[j]] = [qaList[j], qaList[i]];
+  }
 }
 
 function showQuestion() {
@@ -108,25 +130,41 @@ function showQuestion() {
   document.getElementById('progress').textContent = `${currentIndex + 1} / ${qaList.length}問`;
 }
 
-document.getElementById('showBtn').addEventListener('click', () => {
+document.body.addEventListener('click', () => {
   const ansDiv = document.getElementById('answer');
-  ansDiv.textContent = qaList[currentIndex].a;
-  ansDiv.style.display = 'block';
-});
-
-document.getElementById('prevBtn').addEventListener('click', () => {
-  if (currentIndex > 0) {
-    currentIndex--;
+  if (ansDiv.style.display === 'none') {
+    ansDiv.textContent = qaList[currentIndex].a;
+    ansDiv.style.display = 'block';
+  } else {
+    if (currentIndex < qaList.length - 1) {
+      currentIndex++;
+    } else {
+      currentIndex = 0;
+    }
     showQuestion();
   }
 });
 
-document.getElementById('nextBtn').addEventListener('click', () => {
-  if (currentIndex < qaList.length - 1) {
-    currentIndex++;
+document.body.addEventListener('touchstart', handleTouchStart, false);
+document.body.addEventListener('touchend', handleTouchEnd, false);
+let xDown = null;
+function handleTouchStart(evt) {
+  xDown = evt.touches[0].clientX;
+}
+function handleTouchEnd(evt) {
+  if (!xDown) return;
+  let xUp = evt.changedTouches[0].clientX;
+  let xDiff = xDown - xUp;
+  if (Math.abs(xDiff) > 50) {
+    if (xDiff > 0 && currentIndex < qaList.length - 1) {
+      currentIndex++;
+    } else if (xDiff < 0 && currentIndex > 0) {
+      currentIndex--;
+    }
     showQuestion();
   }
-});
+  xDown = null;
+}
 
 loadList();
 </script>
