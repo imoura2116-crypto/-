@@ -3,22 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CSVから一問一答（自動一覧）</title>
+  <title>一問一答</title>
   <style>
     body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 0; }
-    header { background: #333; color: white; padding: 10px; text-align: center; }
-    main { max-width: 800px; margin: auto; padding: 20px; }
+    main { max-width: 800px; margin: auto; padding: 10px; }
     select, button { padding: 8px; margin: 5px 0; font-size: 16px; }
-    .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .question { font-size: 20px; margin-bottom: 10px; }
-    .answer { font-size: 18px; color: #555; padding: 10px; border: 1px dashed #ccc; border-radius: 6px; min-height: 40px; }
+    .card { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; }
+    .question { font-size: 22px; margin-bottom: 10px; text-align: center; }
+    .answer { font-size: 20px; color: #555; padding: 10px; border: 1px dashed #ccc; border-radius: 6px; min-height: 40px; text-align: center; }
     .hidden { filter: blur(8px); }
+    .status-bar { text-align: center; font-size: 14px; color: #333; margin-bottom: 5px; }
   </style>
 </head>
 <body>
-<header>
-  <h1>CSVから一問一答（自動一覧）</h1>
-</header>
 <main>
   <div class="card">
     <label>問題集を選択:</label>
@@ -27,48 +24,35 @@
     <span id="status"></span>
   </div>
 
-  <div class="card">
+  <div class="card" id="touchArea">
+    <div class="status-bar" id="progress">0/0</div>
     <div class="question" id="question">CSVを選択してください</div>
     <div class="answer hidden" id="answer">ここに答え</div>
-    <div style="margin-top:10px;">
-      <button id="showAnswer">答えを表示</button>
-      <button id="prev">前へ</button>
-      <button id="next">次へ</button>
-    </div>
   </div>
 </main>
 
 <script>
 let deck = [];
 let idx = 0;
+let touchStartX = 0, touchStartY = 0;
 
 async function loadList() {
-  try {
-    // GitHub Pagesなどの静的環境ではディレクトリ一覧が直接取れないため、
-    // ここではfetchで失敗したら固定リストにフォールバック
-    const csvFiles = [];
-    // 動的取得が不可のため、fetchを使って事前に想定ファイルを確認する案
-    const candidates = ["骨の生理,構造,化学.csv", "骨盤骨折.csv"];
-    for (const file of candidates) {
-      try {
-        const res = await fetch('csv/' + file, { method: 'HEAD' });
-        if (res.ok) csvFiles.push(file);
-      } catch(e) {}
-    }
-    const sel = document.getElementById('csvSelect');
-    sel.innerHTML = '';
-    csvFiles.forEach(file => {
-      const opt = document.createElement('option');
-      opt.value = file;
-      opt.textContent = file;
-      sel.appendChild(opt);
-    });
-    if (!csvFiles.length) {
-      document.getElementById('status').textContent = 'CSVファイルが見つかりません';
-    }
-  } catch (e) {
-    document.getElementById('status').textContent = 'CSVリストの取得に失敗';
+  const candidates = ["骨の生理,構造,化学.csv", "骨盤骨折.csv"];
+  const csvFiles = [];
+  for (const file of candidates) {
+    try {
+      const res = await fetch('csv/' + file, { method: 'HEAD' });
+      if (res.ok) csvFiles.push(file);
+    } catch(e) {}
   }
+  const sel = document.getElementById('csvSelect');
+  sel.innerHTML = '';
+  csvFiles.forEach(file => {
+    const opt = document.createElement('option');
+    opt.value = file;
+    opt.textContent = file;
+    sel.appendChild(opt);
+  });
 }
 
 function parseCSV(text) {
@@ -83,6 +67,7 @@ function showCard() {
   const ansEl = document.getElementById('answer');
   ansEl.textContent = card.a;
   ansEl.classList.add('hidden');
+  document.getElementById('progress').textContent = `${idx+1} / ${deck.length}`;
 }
 
 async function loadCsv() {
@@ -99,20 +84,40 @@ async function loadCsv() {
   }
 }
 
-document.getElementById('loadCsv').addEventListener('click', loadCsv);
-document.getElementById('showAnswer').addEventListener('click', () => {
-  document.getElementById('answer').classList.remove('hidden');
-});
-document.getElementById('prev').addEventListener('click', () => {
-  if (!deck.length) return;
-  idx = (idx - 1 + deck.length) % deck.length;
-  showCard();
-});
-document.getElementById('next').addEventListener('click', () => {
+function nextCard() {
   if (!deck.length) return;
   idx = (idx + 1) % deck.length;
   showCard();
+}
+function prevCard() {
+  if (!deck.length) return;
+  idx = (idx - 1 + deck.length) % deck.length;
+  showCard();
+}
+
+// タップで答え表示
+const touchArea = document.getElementById('touchArea');
+touchArea.addEventListener('click', () => {
+  document.getElementById('answer').classList.remove('hidden');
 });
+
+// フリックで前/後
+const SWIPE_THRESHOLD = 50;
+touchArea.addEventListener('touchstart', e => {
+  const t = e.changedTouches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+}, {passive:true});
+touchArea.addEventListener('touchend', e => {
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) {
+    if (dx > 0) prevCard(); else nextCard();
+  }
+}, {passive:true});
+
+document.getElementById('loadCsv').addEventListener('click', loadCsv);
 
 loadList();
 </script>
