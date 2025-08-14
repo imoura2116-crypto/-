@@ -40,6 +40,7 @@
     margin: 20px 0;
     font-size: 1.2em;
     text-align: center;
+    word-break: break-word;
   }
   #answer {
     background: #4cafef;
@@ -75,6 +76,7 @@ async function loadList() {
     const res = await fetch('csv/list.json?_=' + Date.now());
     fileStructure = await res.json();
     const folderTabs = document.getElementById('folderTabs');
+    folderTabs.innerHTML = '';
     Object.keys(fileStructure).forEach((folder, idx) => {
       const tab = document.createElement('div');
       tab.className = 'tab' + (idx === 0 ? ' active' : '');
@@ -106,15 +108,19 @@ function selectFolder(folder, tabEl) {
 }
 
 async function loadCSV(path) {
-  const res = await fetch(path + '?_=' + Date.now());
-  const text = await res.text();
-  qaList = text.trim().split(/\r?\n/).map(line => {
-    const [q, a] = line.split(',');
-    return {q, a};
-  });
-  currentIndex = 0;
-  shuffleQuestions();
-  showQuestion();
+  try {
+    const res = await fetch(path + '?_=' + Date.now());
+    const text = await res.text();
+    qaList = text.trim().split(/\r?\n/).map(line => {
+      const [q, a] = line.split(',');
+      return {q: q.trim(), a: a.trim()};
+    });
+    currentIndex = 0;
+    shuffleQuestions();
+    showQuestion();
+  } catch (e) {
+    console.error('CSV読み込み失敗:', e);
+  }
 }
 
 function shuffleQuestions() {
@@ -136,12 +142,7 @@ document.body.addEventListener('click', () => {
     ansDiv.textContent = qaList[currentIndex].a;
     ansDiv.style.display = 'block';
   } else {
-    if (currentIndex < qaList.length - 1) {
-      currentIndex++;
-    } else {
-      currentIndex = 0;
-    }
-    showQuestion();
+    nextQuestion();
   }
 });
 
@@ -156,14 +157,21 @@ function handleTouchEnd(evt) {
   let xUp = evt.changedTouches[0].clientX;
   let xDiff = xDown - xUp;
   if (Math.abs(xDiff) > 50) {
-    if (xDiff > 0 && currentIndex < qaList.length - 1) {
-      currentIndex++;
-    } else if (xDiff < 0 && currentIndex > 0) {
-      currentIndex--;
-    }
-    showQuestion();
+    if (xDiff > 0) nextQuestion();
+    else prevQuestion();
   }
   xDown = null;
+}
+
+function nextQuestion() {
+  if (currentIndex < qaList.length - 1) currentIndex++;
+  else currentIndex = 0;
+  showQuestion();
+}
+function prevQuestion() {
+  if (currentIndex > 0) currentIndex--;
+  else currentIndex = qaList.length - 1;
+  showQuestion();
 }
 
 loadList();
